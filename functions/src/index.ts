@@ -1,3 +1,4 @@
+import { v2beta3 } from '@google-cloud/tasks';
 import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
 import PdfPrinter from 'pdfmake';
@@ -54,4 +55,38 @@ export const createPdfTaskHandler = functions
       });
 
     pdfDoc.end();
+  });
+
+export const createdPdfStorageHandler = functions
+  .region('asia-northeast1')
+  .storage.object()
+  .onFinalize(async (metadata, context) => {
+    const client = new v2beta3.CloudTasksClient();
+    const project = process.env.GCLOUD_PROJECT as string;
+    const parent = client.queuePath(
+      project,
+      'asia-northeast1',
+      'receive-pdf-queue'
+    );
+    const payload = {
+      bucket: metadata.bucket,
+      id: metadata.id,
+      name: metadata.name,
+      selfLink: metadata.owner,
+      mediaLink: metadata.mediaLink,
+    };
+
+    const convertedPayload = JSON.stringify(payload);
+    const body = Buffer.from(convertedPayload).toString('base64');
+    const task = {
+      appEngineHttpRequest: {
+        httpMethod: 1,
+        relativeUri: '/receive-pdf',
+        body,
+      },
+    };
+
+    const response = await client.createTask({ parent, task });
+    const responseName = response[0].name ? response[0].name : '';
+    console.log(`Created task ${responseName}`);
   });
